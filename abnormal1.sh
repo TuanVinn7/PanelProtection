@@ -2,65 +2,47 @@
 
 # Path ke Controller Activity
 REMOTE_PATH="/var/www/pterodactyl/app/Http/Controllers/Server/ActivityController.php"
-TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
-BACKUP_PATH="${REMOTE_PATH}.bak_${TIMESTAMP}"
+BACKUP_PATTERN="${REMOTE_PATH}.bak_*"
 
-echo "🚀 Memasang proteksi Anti Akses Activity Panel..."
+echo "🚀 Memulai proses penghapusan proteksi Anti Akses Activity Panel..."
 
-if [ -f "$REMOTE_PATH" ]; then
-  mv "$REMOTE_PATH" "$BACKUP_PATH"
-  echo "📦 Backup file lama dibuat di $BACKUP_PATH"
+# 1. Cari file backup terbaru berdasarkan pola
+LATEST_BACKUP=$(ls -t ${BACKUP_PATTERN} 2>/dev/null | head -n 1)
+
+if [ -z "$LATEST_BACKUP" ]; then
+  echo "❌ Error: Tidak ditemukan file backup lama (${BACKUP_PATTERN})."
+  echo "❗ Proteksi tidak dapat dihapus secara otomatis. File $REMOTE_PATH mungkin masih mengandung kode proteksi."
+  echo "👉 Harap periksa dan kembalikan secara manual ke kode aslinya."
+  exit 1
 fi
 
-mkdir -p "$(dirname "$REMOTE_PATH")"
-chmod 755 "$(dirname "$REMOTE_PATH")"
+echo "📦 Ditemukan file backup terbaru: $LATEST_BACKUP"
 
-cat > "$REMOTE_PATH" << 'EOF'
-<?php
+# 2. Hapus file yang terproteksi saat ini
+if [ -f "$REMOTE_PATH" ]; then
+  rm -f "$REMOTE_PATH"
+  echo "🗑️ File yang terproteksi saat ini telah dihapus."
+fi
 
-namespace Pterodactyl\Http\Controllers\Server;
+# 3. Kembalikan file backup ke lokasi aslinya
+mv "$LATEST_BACKUP" "$REMOTE_PATH"
+echo "✅ File asli telah dikembalikan ke $REMOTE_PATH"
 
-use Illuminate\View\View;
-use Illuminate\Support\Facades\Auth;
-use Pterodactyl\Http\Controllers\Controller;
-use Pterodactyl\Repositories\Eloquent\ActivityRepository;
-use Pterodactyl\Models\Server;
-use Pterodactyl\Http\Requests\Server\ActivityRequest;
-
-class ActivityController extends Controller
-{
-    /**
-     * ActivityController constructor.
-     */
-    public function __construct(private ActivityRepository $repository)
-    {
-    }
-
-    /**
-     * Displays a list of recent activity for a given server.
-     */
-    public function index(ActivityRequest $request, Server $server): View
-    {
-        // 🔒 Anti akses menu Activity Panel selain user ID 1
-        $user = Auth::user();
-        if (!$user || $user->id !== 1) {
-            abort(403, 'Forbidden');
-        }
-
-        return view('server.activity', [
-            'server' => $server,
-            'activities' => $this->repository->getPaginatedServerActivities(
-                $server->id,
-                $request->input('page', 1)
-            ),
-        ]);
-    }
-}
-EOF
-
+# 4. Set ulang izin file (permintaan izin standar Pterodactyl)
 chmod 644 "$REMOTE_PATH"
 
-echo "✅ Proteksi Anti Akses Activity Panel berhasil dipasang!"
-echo "📂 Lokasi file: $REMOTE_PATH"
-echo "🗂️ Backup file lama: $BACKUP_PATH (jika sebelumnya ada)"
-echo "Forbidden."
+# 5. Opsional: Bersihkan sisa file backup lama (yang bukan yang baru saja dipulihkan)
+if ls ${BACKUP_PATTERN} 1> /dev/null 2>&1; then
+    echo "🧹 Membersihkan sisa file backup lama..."
+    rm -f ${BACKUP_PATTERN}
+fi
+
+echo "🎉 Proteksi Anti Akses Activity Panel berhasil dihapus!"
+echo "📂 Lokasi file sekarang berisi kode asli."
+echo "--------------------------------------------------------"
+echo "Untuk menjalankan script ini, gunakan perintah:"
+echo "chmod +x remove_activity_protection.sh"
+echo "sudo ./remove_activity_protection.sh"
+
+exit 0
+
